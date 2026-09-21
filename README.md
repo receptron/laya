@@ -68,7 +68,7 @@ await Laya.load({
   modelDir: "./onnx", // use a local export instead of downloading (see below)
   repo: "receptron/laya-onnx", // Hugging Face repo that holds the ONNX bundle
   subfolder: "multilingual", // a checkpoint variant inside that repo
-  revision: "main",
+  revision: "main", // pin a commit hash for reproducible results; "main" follows the repo
   cacheDir: "/var/cache/laya",
   token: process.env.HF_TOKEN, // for private repos
   onProgress: ({ file, received, total }) => {}, // download progress

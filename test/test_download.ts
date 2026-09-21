@@ -45,6 +45,30 @@ test("ensureBundle downloads every file once, then only HEAD-checks", async () =
   }
 });
 
+test("ensureBundle uses a populated cache when the network is down", async () => {
+  const cacheDir = await mkdtemp(path.join(tmpdir(), "laya-"));
+  const calls: string[] = [];
+  const realFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = stubFetch("v1", calls) as typeof fetch;
+    const dir = await ensureBundle({ repo: "acme/bundle", cacheDir });
+
+    // every fetch now fails at the transport level, as with no DNS
+    globalThis.fetch = (async () => {
+      throw new TypeError("fetch failed", { cause: new Error("getaddrinfo EAI_AGAIN huggingface.co") });
+    }) as typeof fetch;
+    assert.equal(await ensureBundle({ repo: "acme/bundle", cacheDir }), dir);
+    assert.equal(await readFile(path.join(dir, "laya_config.json"), "utf8"), "laya_config.json:v1");
+
+    // a missing file still has to be downloaded, so that failure is reported
+    await rm(path.join(dir, "laya_config.json"));
+    await assert.rejects(ensureBundle({ repo: "acme/bundle", cacheDir }), /fetch failed/);
+  } finally {
+    globalThis.fetch = realFetch;
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 test("ensureBundle surfaces HTTP errors and leaves no partial file", async () => {
   const cacheDir = await mkdtemp(path.join(tmpdir(), "laya-"));
   const realFetch = globalThis.fetch;

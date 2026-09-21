@@ -58,9 +58,10 @@ export async function ensureBundle(opts: DownloadOptions = {}): Promise<string> 
     const url = `https://huggingface.co/${repo}/resolve/${encodeURIComponent(revision)}/${sub}${file}`;
     const local = await fileSize(dest);
     if (local !== null) {
-      // cheap freshness check: same byte count as the remote file
-      const head = await fetch(url, { method: "HEAD", headers, redirect: "follow" });
-      const remote = head.ok ? Number(head.headers.get("x-linked-size") ?? head.headers.get("content-length")) : NaN;
+      // cheap freshness check: same byte count as the remote file. A HEAD that fails (offline, DNS, 5xx)
+      // is treated as "unknown" so a populated cache keeps working without a network.
+      const head = await fetch(url, { method: "HEAD", headers, redirect: "follow" }).catch(() => null);
+      const remote = head?.ok ? Number(head.headers.get("x-linked-size") ?? head.headers.get("content-length")) : NaN;
       if (!Number.isFinite(remote) || remote === local) continue;
     }
     const res = await fetch(url, { headers, redirect: "follow" });
