@@ -1,6 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSequence, confidenceFromProbs, pyJsonDumps, renderOptions, softmax, tempBucket, toInternal, type SpecialIds } from "../src/sequence.js";
+import {
+  buildSequence,
+  clampTemperatures,
+  confidenceFromProbs,
+  pyJsonDumps,
+  renderOptions,
+  softmax,
+  tempBucket,
+  temperatureFor,
+  toInternal,
+  type SpecialIds,
+} from "../src/sequence.js";
+import type { LayaConfig } from "../src/types.js";
 
 const ids: SpecialIds = { cls: 1, sep: 2, mask: 3, pad: 0, maskTok: "[MASK]" };
 // one id per whitespace-separated word, so lengths are easy to reason about
@@ -91,4 +103,46 @@ test("tempBucket / softmax / confidence", () => {
   assert.ok(Math.abs(p.reduce((a, b) => a + b) - 1) < 1e-12);
   assert.ok(Math.abs(confidenceFromProbs(p)) < 1e-12);
   assert.equal(confidenceFromProbs([1, 0]), 1);
+});
+
+test("clampTemperatures clamps out-of-range values to [0.5, 5] and leaves valid ones alone", () => {
+  const valid: LayaConfig = { max_len: 512, head_max_len: 192, temperature: [1.31, 1.05, 2], temperature_by_options: { "choice:2": 1.98 } };
+  assert.deepEqual(clampTemperatures(valid), valid);
+  const config: LayaConfig = {
+    max_len: 512,
+    head_max_len: 192,
+    temperature: [1.31, 0.25, 7],
+    temperature_by_options: { "choice:2": 1.98, "choice:11+": 0.10058280825614929, "noul:2": 1.2 },
+  };
+  const clamped = clampTemperatures(config);
+  assert.deepEqual(clamped.temperature, [1.31, 0.5, 5]);
+  assert.equal(clamped.temperature_by_options?.["choice:2"], 1.98);
+  assert.equal(clamped.temperature_by_options?.["choice:11+"], 0.5);
+  assert.equal(clamped.temperature_by_options?.["noul:2"], 1.2);
+  // the input config is not mutated, so user-supplied overrides after load() keep working
+  assert.deepEqual(config.temperature, [1.31, 0.25, 7]);
+  assert.equal(config.temperature_by_options?.["choice:11+"], 0.10058280825614929);
+});
+
+test("clampTemperatures accepts fine-tuned configs without per-option temperatures", () => {
+  const config: LayaConfig = { max_len: 512, head_max_len: 192, temperature: [1.31, 1.05, 2] };
+  assert.deepEqual(clampTemperatures(config), { ...config, temperature_by_options: {} });
+  assert.equal(temperatureFor(config, 0, 11), 1.31);
+});
+
+test("temperatureFor clamps the current value at point of use", () => {
+  const config = clampTemperatures({
+    max_len: 512,
+    head_max_len: 192,
+    temperature: [1.31, 1.05, 2],
+    temperature_by_options: { "choice:2": 1.98 },
+  });
+  const options = config.temperature_by_options;
+  assert.ok(options);
+  options["choice:2"] = 0.1;
+  assert.equal(temperatureFor(config, 0, 2), 0.5);
+  options["choice:2"] = Number.NaN;
+  assert.equal(temperatureFor(config, 0, 2), 1.31);
+  options["choice:2"] = "not a number" as unknown as number;
+  assert.equal(temperatureFor(config, 0, 2), 1.31);
 });

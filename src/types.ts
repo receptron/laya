@@ -65,5 +65,5 @@ export interface LayaConfig {
   max_len: number;
   head_max_len: number;
   temperature: [number, number, number];
-  temperature_by_options: Record<string, number>;
+  temperature_by_options?: Record<string, number>;
 }

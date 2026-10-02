@@ -3,7 +3,7 @@
  * option rendering, sequence layout, temperature buckets, confidence. Kept separate from the
  * ONNX session so it can be unit-tested without the weights.
  */
-import type { Question, QuestionType } from "./types.js";
+import type { LayaConfig, Question, QuestionType } from "./types.js";
 
 export const QTYPES: Record<QuestionType, number> = { choice: 0, score: 1, noul: 2 };
 const QTYPE_NAMES: QuestionType[] = ["choice", "score", "noul"];
@@ -65,6 +65,45 @@ function sizeBucket(k: number): string {
 /** Key for the per-cardinality temperature: a 2-option noul and a 20-option choice need different scaling. */
 export function tempBucket(qtype: number, k: number): string {
   return `${QTYPE_NAMES[qtype]}:${sizeBucket(k)}`;
+}
+
+export const TEMP_MIN = 0.5;
+export const TEMP_MAX = 5;
+
+/**
+ * Return a finite temperature in the supported range. Invalid values use the supplied fallback,
+ * so malformed checkpoint data cannot turn logits or softmax into NaN.
+ */
+export function clampTemperature(value: unknown, fallback = 1): number {
+  const t = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.min(TEMP_MAX, Math.max(TEMP_MIN, t));
+}
+
+/** Resolve and clamp the temperature immediately before it is used for logits. */
+export function temperatureFor(config: LayaConfig, qtype: number, k: number): number {
+  const bucketValue = config.temperature_by_options?.[tempBucket(qtype, k)];
+  const baseValue = config.temperature[qtype];
+  const bucketIsFinite = typeof bucketValue === "number" && Number.isFinite(bucketValue);
+  const baseIsFinite = typeof baseValue === "number" && Number.isFinite(baseValue);
+  return clampTemperature(bucketIsFinite ? bucketValue : baseIsFinite ? baseValue : 1);
+}
+
+/** Clamp checkpoint temperatures without mutating the input config. */
+export function clampTemperatures(config: LayaConfig): LayaConfig {
+  const changed: string[] = [];
+  const clamp = (key: string, t: unknown): number => {
+    const v = clampTemperature(t);
+    if (v !== t) changed.push(`${key} ${String(t)} -> ${v}`);
+    return v;
+  };
+  const temperature = config.temperature.map((t, i) => clamp(QTYPE_NAMES[i] ?? String(i), t)) as [number, number, number];
+  const temperature_by_options = Object.fromEntries(Object.entries(config.temperature_by_options ?? {}).map(([k, t]) => [k, clamp(k, t)]));
+  if (changed.length > 0) {
+    console.warn(
+      `laya: this checkpoint ships invalid or out-of-range temperatures: ${changed.join(", ")}. Treat confidence from the affected entries as uncalibrated.`,
+    );
+  }
+  return { ...config, temperature, temperature_by_options };
 }
 
 /** Jev-style confidence: 1 - normalized entropy of the answer distribution. */
