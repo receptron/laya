@@ -97,7 +97,11 @@ export function clampTemperatures(config: LayaConfig): LayaConfig {
     return v;
   };
   const temperature = config.temperature.map((t, i) => clamp(QTYPE_NAMES[i] ?? String(i), t)) as [number, number, number];
-  const temperature_by_options = Object.fromEntries(Object.entries(config.temperature_by_options ?? {}).map(([k, t]) => [k, clamp(k, t)]));
+  // Drop invalid per-option entries rather than defaulting them, so lookup falls back to the qtype temperature.
+  const isValid = (t: unknown) => typeof t === "number" && Number.isFinite(t);
+  const entries = Object.entries(config.temperature_by_options ?? {});
+  for (const [k, t] of entries) if (!isValid(t)) changed.push(`${k} ${String(t)} -> qtype temperature`);
+  const temperature_by_options = Object.fromEntries(entries.filter(([, t]) => isValid(t)).map(([k, t]) => [k, clamp(k, t)]));
   if (changed.length > 0) {
     console.warn(
       `laya: this checkpoint ships invalid or out-of-range temperatures: ${changed.join(", ")}. Treat confidence from the affected entries as uncalibrated.`,

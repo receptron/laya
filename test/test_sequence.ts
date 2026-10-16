@@ -146,3 +146,16 @@ test("temperatureFor clamps the current value at point of use", () => {
   options["choice:2"] = "not a number" as unknown as number;
   assert.equal(temperatureFor(config, 0, 2), 1.31);
 });
+
+test("clampTemperatures drops invalid per-option entries so the qtype temperature applies", () => {
+  const config = {
+    max_len: 512,
+    head_max_len: 192,
+    temperature: [2, 1, 1],
+    temperature_by_options: { "choice:2": null, "choice:3-5": 1.5 },
+  } as unknown as LayaConfig;
+  const clamped = clampTemperatures(config);
+  assert.deepEqual(clamped.temperature_by_options, { "choice:3-5": 1.5 });
+  assert.equal(temperatureFor(clamped, 0, 2), 2);
+  assert.equal(temperatureFor(clamped, 0, 3), 1.5);
+});
