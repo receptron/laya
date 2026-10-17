@@ -17,6 +17,7 @@ import {
   confidenceFromProbs,
   QTYPES,
   renderOptions,
+  resolveSpecialIds,
   softmax,
   temperatureFor,
   toInternal,
@@ -54,12 +55,7 @@ export class Laya {
     const read = async (f: string): Promise<unknown> => JSON.parse(await readFile(path.join(modelDir, f), "utf8"));
     const config = clampTemperatures((await read("laya_config.json")) as LayaConfig);
     const tok = new Tokenizer((await read("tokenizer/tokenizer.json")) as object, (await read("tokenizer/tokenizer_config.json")) as object);
-    const id = (t: string) => {
-      const v = tok.token_to_id(t);
-      if (v === undefined) throw new Error(`special token ${t} missing from tokenizer`);
-      return v;
-    };
-    const ids: SpecialIds = { cls: id("[CLS]"), sep: id("[SEP]"), mask: id("[MASK]"), pad: id("[PAD]"), maskTok: "[MASK]" };
+    const ids = resolveSpecialIds((token) => tok.token_to_id(token));
     const session = await ort.InferenceSession.create(path.join(modelDir, "laya.onnx"), {
       executionProviders: opts.executionProviders ?? ["cpu"],
       graphOptimizationLevel: "all",

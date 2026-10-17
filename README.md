@@ -94,6 +94,8 @@ await Laya.load({
 });
 ```
 
+Tokenizer bundles may use `[CLS]`, `<bos>`, or `<s>` for the sequence start; `[SEP]`, `<eos>`, or `</s>` for separators; `[MASK]` or `<mask>` for option markers; and `[PAD]` or `<pad>` for padding. The ONNX graph and tokenizer must still match Laya's expected model inputs and vocabulary.
+
 Every question of one `systemOne` call is batched into a single run; a call with three questions
 takes about 140 ms on an Apple-silicon CPU once the model is warm.
 

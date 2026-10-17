@@ -156,6 +156,22 @@ export interface SpecialIds {
   maskTok: string;
 }
 
+/** Resolve common BERT and alternate tokenizer spellings for Laya's special tokens. */
+export function resolveSpecialIds(tokenToId: (token: string) => number | undefined): SpecialIds {
+  const find = (candidates: readonly string[]): { id: number; token: string } => {
+    for (const token of candidates) {
+      const id = tokenToId(token);
+      if (id !== undefined) return { id, token };
+    }
+    throw new Error(`special token ${candidates.join("/")} missing from tokenizer`);
+  };
+  const cls = find(["[CLS]", "<bos>", "<s>"]);
+  const sep = find(["[SEP]", "<eos>", "</s>"]);
+  const mask = find(["[MASK]", "<mask>"]);
+  const pad = find(["[PAD]", "<pad>"]);
+  return { cls: cls.id, sep: sep.id, mask: mask.id, pad: pad.id, maskTok: mask.token };
+}
+
 /** Tokenizer surface the sequence builder needs: text -> ids, no special tokens added. */
 export type Encode = (text: string) => number[];
 

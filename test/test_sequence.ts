@@ -7,6 +7,7 @@ import {
   confidenceFromProbs,
   pyJsonDumps,
   renderOptions,
+  resolveSpecialIds,
   softmax,
   tempBucket,
   temperatureFor,
@@ -22,6 +23,50 @@ const encode = (s: string) =>
     .split(/\s+/)
     .filter(Boolean)
     .map((w) => 100 + w.length);
+
+test("resolveSpecialIds supports BERT tokens, including a valid zero pad ID", () => {
+  const tokenIds: Record<string, number> = {
+    "[CLS]": 101,
+    "[SEP]": 102,
+    "[MASK]": 103,
+    "[PAD]": 0,
+  };
+  assert.deepEqual(
+    resolveSpecialIds((token) => tokenIds[token]),
+    {
+      cls: 101,
+      sep: 102,
+      mask: 103,
+      pad: 0,
+      maskTok: "[MASK]",
+    },
+  );
+});
+
+test("resolveSpecialIds supports alternate special-token spellings", () => {
+  const tokenIds: Record<string, number> = {
+    "<bos>": 2,
+    "<s>": 204,
+    "<eos>": 1,
+    "</s>": 213,
+    "<mask>": 4,
+    "<pad>": 0,
+  };
+  assert.deepEqual(
+    resolveSpecialIds((token) => tokenIds[token]),
+    {
+      cls: 2,
+      sep: 1,
+      mask: 4,
+      pad: 0,
+      maskTok: "<mask>",
+    },
+  );
+});
+
+test("resolveSpecialIds reports all accepted names when a required token is missing", () => {
+  assert.throws(() => resolveSpecialIds(() => undefined), /special token \[CLS\]\/<bos>\/<s> missing from tokenizer/);
+});
 
 test("pyJsonDumps matches Python json.dumps(ensure_ascii=False)", () => {
   assert.equal(pyJsonDumps({ subject: "返金", n: 3, ok: true, x: null, xs: [1, "a"] }), '{"subject": "返金", "n": 3, "ok": true, "x": null, "xs": [1, "a"]}');
