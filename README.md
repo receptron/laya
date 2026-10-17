@@ -53,6 +53,7 @@ result.answers.department.choice; // "billing"
 result.answers.department.probabilities; // { billing: 0.9415, support: 0.031, sales: 0.0275 }
 result.answers.urgency.score; // 1.3886   (expected level, 0..3)
 result.answers.churn_risk.noul; // 0.0988   (P(true))
+result.answers.department.answer_confidence; // 0.9415   (max probability, on every answer type)
 result.usage.input_tokens; // 267
 
 await laya.close();
@@ -60,6 +61,10 @@ await laya.close();
 
 The answer types follow the question types, so `result.answers.department` is a `ChoiceAnswer`
 and `result.answers.churn_risk` a `NoulAnswer` without any casting.
+
+To gate on confidence, use `answer_confidence`: the probability of the reported answer (`max(p)`),
+which is the quantity the checkpoint's temperatures are fitted for and means the same thing for every
+question type. `confidence` on `choice` / `score` answers is a different quantity (1 − normalized entropy).
 
 ### Options
 
@@ -102,6 +107,11 @@ Then `Laya.load({ modelDir: "./onnx" })`. The bundle is the five files listed in
 - Each question's options must fit in `head_max_len` (192) tokens; `systemOne` throws otherwise.
   Fewer than about 20 options per `choice` question is the model's own recommendation.
 - The state is truncated to `max_len` (512 tokens for the English checkpoint) after the question header.
+  A string or object state keeps its start; a list state (a conversation) keeps its newest end, as in training.
+- `choice` labels given as a list must be distinct; a repeated label throws instead of being merged.
+- Temperatures are clamped to [0.5, 5]. The published bundle uses 0.945 for `choice` questions with
+  11 or more options, where the upstream checkpoint ships 0.1006 (clamped to 0.5 by the Python `laya`
+  package), so confidences for those questions differ from upstream by design.
 - A JSON state is serialized like Python's `json.dumps(ensure_ascii=False)` so that tokens match the
   reference implementation; non-integer numbers may format differently between JS and Python.
 

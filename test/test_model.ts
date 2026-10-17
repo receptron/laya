@@ -36,6 +36,17 @@ test("systemOne reproduces the Python reference output", { skip: !available && "
     assert.equal(r.answers.urgency.score, 1.3886);
     assert.deepEqual(r.answers.urgency.probabilities, { "0": 0.1752, "1": 0.2947, "2": 0.4962, "3": 0.0338 });
     assert.equal(r.answers.churn_risk.noul, 0.0988);
+    assert.equal(r.answers.department.answer_confidence, 0.9415);
+    assert.equal(r.answers.urgency.answer_confidence, 0.4962);
+    assert.equal(r.answers.churn_risk.answer_confidence, 0.9012);
+
+    // a single-option choice runs (the graph needs two slots; the second is masked) and is fully decided
+    const one = await laya.systemOne("anything", { only: { type: "choice", instructions: "Pick one", criteria: ["solo"] } });
+    assert.equal(one.answers.only.choice, "solo");
+    assert.deepEqual(one.answers.only.probabilities, { solo: 1 });
+    assert.equal(one.answers.only.answer_confidence, 1);
+    assert.equal(one.answers.only.confidence, 1);
+    assert.ok(Number.isFinite(one.answers.only.rl_agent.act_probability));
   } finally {
     await laya.close();
   }

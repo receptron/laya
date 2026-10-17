@@ -12,6 +12,7 @@ import * as ort from "onnxruntime-node";
 import { Tokenizer } from "@huggingface/tokenizers";
 import {
   buildSequence,
+  checkChoiceLabels,
   clampTemperatures,
   confidenceFromProbs,
   QTYPES,
@@ -76,7 +77,9 @@ export class Laya {
       throw new Error("systemOne: at least one question is required");
     }
     const items = qids.map((qid) => {
-      const q = toInternal(questions[qid] as Question);
+      const qdef = questions[qid] as Question;
+      checkChoiceLabels(qid, qdef);
+      const q = toInternal(qdef);
       const { ids, markers } = buildSequence(this.encode, this.ids, state, q, this.config.max_len, this.config.head_max_len);
       if (markers.length !== renderOptions(q).length) {
         throw new Error(`question ${JSON.stringify(qid)}: options do not fit in head_max_len=${this.config.head_max_len} tokens`);
@@ -87,7 +90,9 @@ export class Laya {
     // rl_common.collate_items: right-pad to the longest sequence / widest option set in the batch
     const n = items.length;
     const L = Math.max(...items.map((it) => it.ids.length));
-    const K = Math.max(...items.map((it) => it.markers.length));
+    // at least 2 slots: the graph's act head takes the top two probabilities, so a single-option
+    // question gets a masked second slot (p = 0), as upstream laya pads it
+    const K = Math.max(2, ...items.map((it) => it.markers.length));
     const inputIds = new BigInt64Array(n * L).fill(BigInt(this.ids.pad));
     const attention = new BigInt64Array(n * L);
     const markerPos = new BigInt64Array(n * K);
@@ -129,6 +134,8 @@ export class Laya {
       const temp = temperatureFor(this.config, it.qtype, k);
       const p = softmax(Array.from(logits.subarray(r * K, r * K + k), (v) => v / temp));
       const ext = { act_probability: actData[r * nAct] ?? 0 };
+      // max(p): the quantity the temperatures are fitted for, comparable across question types
+      const answerConfidence = round4(Math.max(...p));
       const q = it.q;
       if (q.t === "choice") {
         const keys = Object.keys(q.crit as Record<string, string | null>);
@@ -138,6 +145,7 @@ export class Laya {
           choice: keys[best] as string,
           probabilities: Object.fromEntries(keys.map((kk, i) => [kk, round4(p[i] ?? 0)])),
           confidence: round4(confidenceFromProbs(p)),
+          answer_confidence: answerConfidence,
           rl_agent: ext,
         };
       } else if (q.t === "score") {
@@ -148,10 +156,11 @@ export class Laya {
           legend: Object.fromEntries(crit.map((c, i) => [String(i), c])),
           probabilities: Object.fromEntries(p.map((v, i) => [String(i), round4(v)])),
           confidence: round4(confidenceFromProbs(p)),
+          answer_confidence: answerConfidence,
           rl_agent: ext,
         };
       } else {
-        answers[qid] = { type: "noul", noul: round4(p[1] ?? 0), rl_agent: ext };
+        answers[qid] = { type: "noul", noul: round4(p[1] ?? 0), answer_confidence: answerConfidence, rl_agent: ext };
       }
     });
     return {

@@ -20,7 +20,28 @@ export function toInternal(q: Question): InternalQ {
   if (q.type === "choice" && Array.isArray(crit)) {
     crit = Object.fromEntries(crit.map((c) => [c, null]));
   }
-  return { t: q.type, ins: typeof q.instructions === "string" ? q.instructions : JSON.stringify(q.instructions), crit };
+  // json.dumps, as in the checkpoint's _to_internal: ", " / ": " separators, unlike JSON.stringify
+  return { t: q.type, ins: typeof q.instructions === "string" ? q.instructions : pyJsonDumps(q.instructions), crit };
+}
+
+/**
+ * Reject choice labels that cannot be answer keys: a null label, or two labels that land on one key
+ * (`["a", "a"]`, `["1", 1]`), which would otherwise be merged and score fewer options than written.
+ */
+export function checkChoiceLabels(qid: string, q: Question): void {
+  if (q.type !== "choice" || !Array.isArray(q.criteria)) return;
+  const seen = new Map<string, number>();
+  q.criteria.forEach((label, i) => {
+    // typed as string, but JSON callers can still send null
+    if ((label as string | null | undefined) == null) {
+      throw new Error(`question ${JSON.stringify(qid)}: choice label ${i} is null; every label must be a string`);
+    }
+    const first = seen.get(String(label));
+    if (first !== undefined) {
+      throw new Error(`question ${JSON.stringify(qid)}: choice label ${i} (${JSON.stringify(label)}) repeats label ${first}`);
+    }
+    seen.set(String(label), i);
+  });
 }
 
 /** Option texts in label-index order. Noul is always [false, true] so p[1] == noul. */
@@ -141,7 +162,8 @@ export type Encode = (text: string) => number[];
 /**
  * rl_common.build_sequence:
  *   [CLS] <type> question: instructions [SEP] [MASK] opt0 [MASK] opt1 ... [SEP] state [SEP]
- * Returns the ids and the position of each option's [MASK] marker.
+ * Returns the ids and the position of each option's [MASK] marker. A conversation (list) state keeps
+ * its newest end when it does not fit, as in training (truncate_left=True).
  */
 export function buildSequence(
   encode: Encode,
@@ -172,7 +194,8 @@ export function buildSequence(
   }
   seq.push(ids.sep);
   const room = Math.max(0, maxLen - seq.length - 1);
-  const st = encode(scrub(serializeState(state))).slice(0, room);
+  const stateIds = encode(scrub(serializeState(state)));
+  const st = Array.isArray(state) ? stateIds.slice(Math.max(0, stateIds.length - room)) : stateIds.slice(0, room);
   seq.push(...st, ids.sep);
   return { ids: seq.slice(0, maxLen), markers: markers.filter((m) => m < maxLen) };
 }

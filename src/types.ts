@@ -30,6 +30,8 @@ export interface ChoiceAnswer {
   probabilities: Record<string, number>;
   /** 1 - normalized entropy of the answer distribution */
   confidence: number;
+  /** max(p): probability of the reported answer, the quantity the temperatures are fitted for */
+  answer_confidence: number;
   rl_agent: { act_probability: number };
 }
 
@@ -40,6 +42,8 @@ export interface ScoreAnswer {
   legend: Record<string, string>;
   probabilities: Record<string, number>;
   confidence: number;
+  /** max(p): probability of the reported answer, the quantity the temperatures are fitted for */
+  answer_confidence: number;
   rl_agent: { act_probability: number };
 }
 
@@ -47,6 +51,8 @@ export interface NoulAnswer {
   type: "noul";
   /** P(true) */
   noul: number;
+  /** max(noul, 1 - noul) */
+  answer_confidence: number;
   rl_agent: { act_probability: number };
 }
 

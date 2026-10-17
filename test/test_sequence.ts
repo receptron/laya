@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildSequence,
+  checkChoiceLabels,
   clampTemperatures,
   confidenceFromProbs,
   pyJsonDumps,
@@ -158,4 +159,30 @@ test("clampTemperatures drops invalid per-option entries so the qtype temperatur
   assert.deepEqual(clamped.temperature_by_options, { "choice:3-5": 1.5 });
   assert.equal(temperatureFor(clamped, 0, 2), 2);
   assert.equal(temperatureFor(clamped, 0, 3), 1.5);
+});
+
+test("toInternal serializes object instructions like Python json.dumps", () => {
+  assert.equal(toInternal({ type: "noul", instructions: { task: "返金", n: 2 } }).ins, '{"task": "返金", "n": 2}');
+  assert.equal(toInternal({ type: "noul", instructions: "plain" }).ins, "plain");
+});
+
+test("buildSequence keeps the newest end of a conversation (list) state", () => {
+  const q = toInternal({ type: "noul", instructions: "is it" });
+  const turns = Array.from({ length: 200 }, (_, i) => "t".repeat((i % 7) + 1));
+  const last = encode(pyJsonDumps(turns)).slice(-5);
+  const { ids: seq } = buildSequence(encode, ids, turns, q, 64, 32);
+  assert.equal(seq.length, 64);
+  assert.deepEqual(seq.slice(-6, -1), last);
+  // a string state still keeps its start
+  const { ids: seq2 } = buildSequence(encode, ids, "a bb ccc " + "w ".repeat(1000), q, 64, 32);
+  assert.deepEqual(seq2.slice(seq2.lastIndexOf(2, -2) + 1, seq2.lastIndexOf(2, -2) + 4), [101, 102, 103]);
+});
+
+test("checkChoiceLabels rejects duplicate and null labels", () => {
+  assert.doesNotThrow(() => checkChoiceLabels("q", { type: "choice", instructions: "", criteria: ["a", "b"] }));
+  assert.throws(() => checkChoiceLabels("q", { type: "choice", instructions: "", criteria: ["a", "a"] }), /label 1 \("a"\) repeats label 0/);
+  const mixed = ["1", 1] as unknown as string[];
+  assert.throws(() => checkChoiceLabels("q", { type: "choice", instructions: "", criteria: mixed }), /repeats label 0/);
+  const withNull = ["a", null] as unknown as string[];
+  assert.throws(() => checkChoiceLabels("q", { type: "choice", instructions: "", criteria: withNull }), /label 1 is null/);
 });
